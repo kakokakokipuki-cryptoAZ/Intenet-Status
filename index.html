@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ネットワーク＆DNSチェッカー</title>
+    <style>
+        :root {
+            --primary: #0071e3;
+            --dark: #1d1d1f;
+            --light: #f5f5f7;
+            --card-bg: #ffffff;
+            --success: #34c759;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--light);
+            color: var(--dark);
+        }
+        nav {
+            background-color: var(--dark);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        nav .logo { color: white; font-weight: bold; font-size: 1.2rem; }
+        nav ul { list-style: none; display: flex; margin: 0; padding: 0; }
+        nav ul li { margin-left: 20px; }
+        nav ul li a { color: #ccc; text-decoration: none; }
+        nav ul li a:hover { color: white; }
+        main { max-width: 800px; margin: 40px auto; padding: 20px; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; border-bottom: 2px solid var(--light); padding-bottom: 10px; }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 15px; }
+        .info-item { background: var(--light); padding: 15px; border-radius: 8px; text-align: center; }
+        .info-item .label { font-size: 0.9rem; color: #666; }
+        .info-item .value { font-size: 1.3rem; font-weight: bold; margin-top: 5px; color: var(--primary); }
+        .dns-badge { display: inline-block; background: var(--success); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; margin-top: 5px; }
+        button { background-color: var(--primary); color: white; border: none; padding: 12px 24px; font-size: 1rem; border-radius: 8px; cursor: pointer; width: 100%; margin-top: 15px; }
+        button:disabled { background-color: #ccc; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="logo">NetChecker</div>
+        <ul>
+            <li><a href="#dns-section">DNS診断</a></li>
+            <li><a href="#speed-section">速度テスト</a></li>
+        </ul>
+    </nav>
+
+    <main>
+        <!-- DNS & IP 情報 -->
+        <section id="dns-section" class="card">
+            <h2>現在の接続先・DNS判定</h2>
+            <p>あなたが現在どのパブリックDNSサーバーを経由しているか簡易判定します。</p>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="label">あなたのIPアドレス</div>
+                    <div id="ip-value" class="value">読み込み中...</div>
+                </div>
+                <div class="info-item">
+                    <div class="label">経由中のDNS (リゾルバ)</div>
+                    <div id="dns-provider" class="value">判定中...</div>
+                    <div id="dns-detail" class="dns-badge" style="display:none;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 速度チェッカー -->
+        <section id="speed-section" class="card">
+            <h2>インターネット速度チェッカー</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="label">ダウンロード速度</div>
+                    <div id="speed-value" class="value">-- Mbps</div>
+                </div>
+            </div>
+            <button id="start-test-btn" onclick="runSpeedTest()">測定を開始する</button>
+        </section>
+    </main>
+
+    <script>
+        // IPとDNSプロバイダの簡易判定
+        async function checkNetwork() {
+            try {
+                // 1. 通常のパブリックIP取得
+                const ipRes = await fetch('https://ipify.org');
+                const ipData = await ipRes.json();
+                document.getElementById('ip-value').innerText = ipData.ip;
+
+                // 2. Cloudflareのデバッグエンドポイントを使って、DNSリゾルバの情報を引っ張る
+                const cfRes = await fetch('https://1.1.1');
+                const text = await cfRes.text();
+                
+                // テキストデータから「warp=on」や「gateway=」などの文字を解析
+                if (text.includes("warp=on")) {
+                    document.getElementById('dns-provider').innerText = "Cloudflare WARP";
+                    showBadge("1.1.1.1 / 安全な接続");
+                } else if (text.includes("ip=")) {
+                    // 通常の接続の場合、ホスト名や逆引き情報がないためブラウザ側では「その他・プロバイダ」となることが多いです
+                    document.getElementById('dns-provider').innerText = "通常のDNSサーバー";
+                    showBadge("プロバイダまたは自動設定");
+                }
+            } catch (e) {
+                // ブロックされた場合（Google DNS 8.8.8.8 などを使用中、または広告ブロッカー等）
+                document.getElementById('dns-provider').innerText = "外部DNSまたは制限環境";
+                showBadge("Google DNS / 他のパブリックDNSの可能性");
+            }
+        }
+
+        function showBadge(text) {
+            const badge = document.getElementById('dns-detail');
+            badge.innerText = text;
+            badge.style.display = "inline-block";
+        }
+
+        // 速度テスト (前回のコードを流用)
+        async function runSpeedTest() {
+            const btn = document.getElementById('start-test-btn');
+            const speedDisplay = document.getElementById('speed-value');
+            btn.disabled = true; speedDisplay.innerText = "測定中...";
+            const testUrl = "https://cloudflare.com"; 
+            const startTime = performance.now();
+            try {
+                const response = await fetch(testUrl + '&cacheBust=' + startTime);
+                const blob = await response.blob();
+                const duration = (performance.now() - startTime) / 1000;
+                const speedMbps = ((blob.size * 8) / duration / (1024 * 1024)).toFixed(2);
+                speedDisplay.innerText = `${speedMbps} Mbps`;
+            } catch (error) {
+                speedDisplay.innerText = "エラー";
+            } finally { btn.disabled = false; }
+        }
+
+        window.onload = checkNetwork;
+    </script>
+</body>
+</html>
