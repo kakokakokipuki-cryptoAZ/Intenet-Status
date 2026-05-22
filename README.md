@@ -1,2 +1,2 @@
 # Intenet-Status
-Uhh
+Completely free usable, 100% AI made
